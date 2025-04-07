@@ -1,0 +1,130 @@
+import streamlit as st
+import math
+import matplotlib.pyplot as plt
+
+# Copper Cable Size Calculator
+# Cable data for copper (resistance in ohm/meter)
+copper_resistance = {
+    1.5: 0.0121,
+    2.5: 0.00741,
+    4: 0.00461,
+    6: 0.00308,
+    10: 0.00183,
+    16: 0.00115,
+    25: 0.000727,
+    35: 0.000524,
+    50: 0.000387,
+    70: 0.000268,
+    95: 0.000193,
+    120: 0.000153,
+    150: 0.000124,
+    185: 0.0000991,
+    240: 0.0000754
+}
+
+# Current carrying capacity
+cable_capacity = {
+    1.5: 14,
+    2.5: 20,
+    4: 26,
+    6: 34,
+    10: 46,
+    16: 61,
+    25: 83,
+    35: 105,
+    50: 130,
+    70: 165,
+    95: 200,
+    120: 230,
+    150: 265,
+    185: 300,
+    240: 360
+}
+
+def calculate_current(power_kva, voltage, phase):
+    power_w = power_kva * 1000
+    if phase == 'Three Phase':
+        current = power_w / (math.sqrt(3) * voltage)
+    else:
+        current = power_w / voltage
+    return current
+
+def calculate_voltage_drop(current, resistance, length, phase):
+    total_length = length * 2
+    if phase == 'Three Phase':
+        return math.sqrt(3) * current * resistance * total_length
+    else:
+        return current * resistance * total_length
+
+# Solar System Sizing Tool
+def size_inverter(load_profile):
+    peak_load = max(load_profile)
+    inverter_size = peak_load * 1.2  # Size in kW
+    return inverter_size
+
+def size_panels(energy_needs, sunlight_hours):
+    daily_energy = sum(energy_needs)  # Sum of energy consumed each hour
+    panel_capacity = 0.25  # kW (typical for standard panels)
+    panels_needed = daily_energy / (panel_capacity * sunlight_hours)  # Panels required for one day of energy
+    return panels_needed
+
+def size_battery(energy_needs, days_of_autonomy, system_voltage):
+    daily_energy = sum(energy_needs)
+    battery_capacity_kWh = daily_energy * days_of_autonomy
+    battery_capacity_Ah = battery_capacity_kWh * 1000 / system_voltage  # Assuming DC system voltage
+    return battery_capacity_Ah
+
+# Streamlit UI for navigation
+st.sidebar.title("Navigation")
+tool = st.sidebar.radio("Select a tool", ("Copper Cable Size Calculator", "Solar System Sizing Tool"))
+
+if tool == "Copper Cable Size Calculator":
+    st.title("Copper Cable Size Calculator")
+    voltage = st.number_input("Voltage (V)", value=415)
+    phase = st.selectbox("Phase", ['Three Phase', 'Single Phase'])
+    length = st.number_input("Cable Length (meters, one-way)", value=50)
+    power = st.number_input("Load Power (kVA)", value=50.0)
+
+    if st.button("Calculate Cable Size"):
+        current = calculate_current(power, voltage, phase)
+        st.write(f"Calculated Current: {current:.2f} A")
+
+        suitable_sizes = []
+        for size, resistance in copper_resistance.items():
+            volt_drop = calculate_voltage_drop(current, resistance, length, phase)
+            volt_drop_percent = (volt_drop / voltage) * 100
+            if current <= cable_capacity[size] and volt_drop_percent <= 5:
+                suitable_sizes.append((size, cable_capacity[size], volt_drop, volt_drop_percent))
+
+        if suitable_sizes:
+            st.success("Suitable Cable Sizes:")
+            for size, capacity, vdrop, vdrop_percent in suitable_sizes:
+                st.write(f"{size} mm^2 - Rated {capacity} A - Voltage Drop: {vdrop:.2f} V ({vdrop_percent:.2f}%)")
+        else:
+            st.error("No suitable cable size found. Try reducing length or power.")
+
+elif tool == "Solar System Sizing Tool":
+    st.title("Solar System Sizing Tool")
+
+    # User Inputs for Load Profile, Days of Autonomy, etc.
+    load_profile = st.text_input("Load Profile (Hourly Power Consumption in kW, comma-separated, e.g., 1.0, 1.2, 1.1, ...)", "")
+    load_profile = [float(x.strip()) for x in load_profile.split(",")] if load_profile else []
+    days_of_autonomy = st.number_input("Days of Autonomy", value=2)
+    sunlight_hours = st.number_input("Average Sunlight Hours per Day", value=5)
+    system_voltage = st.number_input("System Voltage (V, e.g., 48V)", value=48)
+
+    if st.button("Calculate System Size"):
+        if load_profile:
+            # Inverter sizing
+            inverter_size = size_inverter(load_profile)
+            st.write(f"Inverter Size: {inverter_size:.2f} kW")
+
+            # Panel sizing
+            panels_needed = size_panels(load_profile, sunlight_hours)
+            st.write(f"Panels Needed: {panels_needed:.2f} panels")
+
+            # Battery sizing
+            battery_size = size_battery(load_profile, days_of_autonomy, system_voltage)
+            st.write(f"Battery Size: {battery_size:.2f} Ah")
+        else:
+            st.error("Please provide a valid load profile.")
